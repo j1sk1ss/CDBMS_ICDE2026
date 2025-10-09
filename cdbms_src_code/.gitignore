@@ -1,0 +1,11 @@
+.DS_Store
+builds/*
+.vscode/*
+*.pg
+*.db
+*.dr
+*.tb
+*.pyc
+*.dblite
+*.txt
+.vscode

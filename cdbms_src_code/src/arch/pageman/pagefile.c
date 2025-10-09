@@ -1,0 +1,170 @@
+#include <pageman.h>
+
+page_t* PGM_create_page(char* __restrict name, unsigned char* __restrict buffer, size_t data_size) {
+    page_t* page = (page_t*)malloc_s(sizeof(page_t));
+    page_header_t* header = (page_header_t*)malloc_s(sizeof(page_header_t));
+    if (!page || !header) {
+        SOFT_FREE(page);
+        SOFT_FREE(header);
+        return NULL;
+    }
+
+    str_memset(page, 0, sizeof(page_t));
+    str_memset(header, 0, sizeof(page_header_t));
+
+    header->magic = PAGE_MAGIC;
+    str_strncpy(header->name, name, PAGE_NAME_SIZE);
+    page->lock = NULL_LOCK;
+    page->append_offset = -1;
+
+    page->header = header;
+    if (buffer != NULL) str_memset(page->content, buffer, data_size);
+    for (int i = data_size + 1; i < PAGE_CONTENT_SIZE; i++) {
+        page->content[i] = encode_hamming_15_11(PAGE_EMPTY);
+    }
+    
+    return page;
+}
+
+page_t* PGM_create_empty_page(char* base_path) {
+    char* unique_name = generate_unique_filename(base_path, PAGE_NAME_SIZE, PAGE_EXTENSION);
+    if (!unique_name) return NULL;
+
+    page_t* page = PGM_create_page(unique_name, NULL, 0);
+    page->base_path = (char*)malloc_s(str_strlen(base_path) + 1);
+    if (!page->base_path) {
+        SOFT_FREE(unique_name);
+        return NULL;
+    }
+
+    str_strcpy(page->base_path, base_path);
+    
+    SOFT_FREE(unique_name);
+    return page;
+}
+
+int PGM_save_page(page_t* page) {
+    int status = -1;
+    checksum_t page_cheksum = 0;
+    #ifndef NO_PAGE_SAVE_OPTIMIZATION
+    page_cheksum = PGM_get_checksum(page);
+    if (page_cheksum != page->header->checksum)
+    #endif
+    {
+        char save_path[DEFAULT_PATH_SIZE] = { 0 };
+        get_load_path(page->header->name, PAGE_NAME_SIZE, save_path, page->base_path, PAGE_EXTENSION);   
+        ci_t ci = NIFAT32_open_content(NO_RCI, save_path, MODE(CR_MODE, FILE_TARGET));
+        if (ci < 0) { print_error("Can't save or create [%s] file", save_path); }
+        else {
+            status = 1;
+            page->header->checksum = page_cheksum;
+            unsigned short encoded_header[sizeof(page_header_t)] = { 0 };
+            pack_memory((byte_t*)page->header, (decoded_t*)encoded_header, sizeof(page_header_t));
+            
+            if (status == 1 && NIFAT32_write_buffer2content(
+                ci, 0, (const_buffer_t)&encoded_header, sizeof(page_header_t) * sizeof(decoded_t)
+            ) != sizeof(page_header_t) * sizeof(decoded_t)) status = -2;
+
+            if (status == 1 && NIFAT32_write_buffer2content(
+                ci, sizeof(page_header_t) * sizeof(decoded_t), 
+                (const_buffer_t)page->content, PAGE_CONTENT_SIZE * sizeof(decoded_t)
+            ) != PAGE_CONTENT_SIZE * sizeof(decoded_t)) status = -3;
+
+            NIFAT32_close_content(ci);
+        }
+    }
+
+    return status;
+}
+
+page_t* PGM_load_page(char* base_path, char* name) {
+    char load_path[DEFAULT_PATH_SIZE] = { 0 };
+    get_load_path(name, PAGE_NAME_SIZE, load_path, base_path, PAGE_EXTENSION);
+
+    page_t* loaded_page = (page_t*)CHC_find_entry(name, base_path, PAGE_CACHE);
+    if (loaded_page) {
+        print_io("Loading page [%s] from GCT", load_path);
+        return loaded_page;
+    }
+
+    ci_t ci = NIFAT32_open_content(NO_RCI, load_path, DF_MODE);
+    print_io("Loading page [%s]", load_path);
+    if (ci < 0) { print_error("Page not found! Path: [%s]", load_path); }
+    else {
+        page_header_t* header = (page_header_t*)malloc_s(sizeof(page_header_t));
+        if (header) {
+            int offset = 0;
+            str_memset(header, 0, sizeof(page_header_t));
+
+            encoded_t encoded_header[sizeof(page_header_t)] = { 0 };
+            NIFAT32_read_content2buffer(ci, offset, (buffer_t)encoded_header, sizeof(page_header_t) * sizeof(unsigned short));
+            unpack_memory((encoded_t*)encoded_header, (byte_t*)header, sizeof(page_header_t));
+            offset += sizeof(page_header_t) * sizeof(unsigned short);
+
+            if (header->magic != PAGE_MAGIC) {
+                print_error("Page file wrong magic for [%s]", load_path);
+                free_s(header);
+                NIFAT32_close_content(ci);
+            } 
+            else {
+                page_t* page = (page_t*)malloc_s(sizeof(page_t));
+                if (!page) free_s(header);
+                else {
+                    unsigned short encoded_pm = encode_hamming_15_11((unsigned short)PAGE_EMPTY);
+                    for (int i = 0; i < PAGE_CONTENT_SIZE; i++) page->content[i] = encoded_pm;
+                    NIFAT32_read_content2buffer(ci, offset, (buffer_t)page->content, PAGE_CONTENT_SIZE * sizeof(unsigned short));
+                    NIFAT32_close_content(ci);
+
+                    page->lock   = NULL_LOCK;
+                    page->header = header;
+                    loaded_page  = page;
+                    page->append_offset = -1;
+
+                    CHC_add_entry(
+                        loaded_page, loaded_page->header->name, base_path, PAGE_CACHE, 
+                        (void*)PGM_free_page, (void*)PGM_save_page
+                    );
+                }
+            }
+        }
+    }
+
+    loaded_page->base_path = (char*)malloc_s(str_strlen(base_path) + 1);
+    if (!loaded_page->base_path) {
+        PGM_free_page(loaded_page);
+        return NULL;
+    }
+
+    str_strcpy(loaded_page->base_path, base_path);
+    return loaded_page;
+}
+
+int PGM_flush_page(page_t* page) {
+    if (!page) return -2;
+    if (page->is_cached) return -1;
+    PGM_save_page(page);
+    return PGM_free_page(page);
+}
+
+int PGM_free_page(page_t* page) {
+    if (!page) return -1;
+    SOFT_FREE(page->header);
+    SOFT_FREE(page->base_path);
+    SOFT_FREE(page);
+    return 1;
+}
+
+unsigned int PGM_get_checksum(page_t* page) {
+    if (!page) return 0;
+    unsigned int prev_checksum = page->header->checksum;
+    page->header->checksum = 0;
+
+    unsigned int _checksum = 0;
+    if (page->header) {
+        _checksum = murmur3_x86_32((const unsigned char*)page->header, sizeof(page_header_t), 0);
+    }
+
+    page->header->checksum = prev_checksum;
+    _checksum = murmur3_x86_32((const unsigned char*)page->content, sizeof(page->content), 0);
+    return _checksum;
+}

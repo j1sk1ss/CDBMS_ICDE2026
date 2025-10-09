@@ -1,0 +1,12 @@
+[package]
+name = "HashFunctionsBenchmark"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hash_lib = { version = "0.1.0", path = "../HashLib" }
+clap = { version = "4.5", features = ["derive"] }
+figlet-rs = "0.1.5"
+csv = "1.3"
+indicatif = "0.17"
+criterion = "0.5"

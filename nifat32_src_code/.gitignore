@@ -1,0 +1,10 @@
+/.vscode
+builds
+formatter/nifat32
+*.img
+.DS_Store
+__pycache__
+test/injector_scenario.txt
+test/efficiency/Cargo.toml
+test/efficiency/target/
+test/efficiency/Cargo.lock

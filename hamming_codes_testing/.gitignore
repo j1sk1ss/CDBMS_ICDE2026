@@ -1,0 +1,4 @@
+.vscode
+*.img
+*.hamm
+__pycache__
