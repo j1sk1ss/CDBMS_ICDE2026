@@ -1,9 +1,3 @@
 # Hamming codes
-## Hamming 3,1
-## Hamming 7,4
-## Hamming 15,11
-## Hamming 31,26
-## Hamming 63,57
-## Hamming 127,120
-## Hamming 255,247
-## Hamming 511,502
+This is an implementation of Hamming Codes (with N parity bits count) in C language.
+- `esp32cp2102` - ESP32 benchmark for hamming codes
