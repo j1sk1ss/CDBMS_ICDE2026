@@ -90,3 +90,16 @@ int ll_free(void* ptr) {
     return 1;
 }
 
+void* ll_realloc(void* ptr, unsigned int size) {
+    void* new_data = NULL;
+    if (size) {
+        if(!ptr) return ll_malloc(size);
+        new_data = ll_malloc(size);
+        if(new_data) {
+            str_memcpy(new_data, ptr, size);
+            ll_free(ptr);
+        }
+    }
+
+    return new_data;
+}

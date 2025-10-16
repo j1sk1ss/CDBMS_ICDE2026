@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include <str.h>
+
 #ifndef NULL
     #define NULL ((void*)0)
 #endif
@@ -23,6 +25,7 @@ int ll_init();
 void* ll_malloc(unsigned int size);
 void* ll_mallocoff(unsigned int size, unsigned int offset);
 int ll_free(void* ptr);
+void* ll_realloc(void* ptr, unsigned int size);
 
 #ifdef __cplusplus
 }

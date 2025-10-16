@@ -1,12 +1,13 @@
 import os
 import sys
-import glob
 import time
 import random
 import argparse
 import pyfiglet
 import textwrap
 import subprocess
+
+from pathlib import Path
 
 from unix import (
     get_cpu_freq,
@@ -89,26 +90,21 @@ def _launch_tool(tool: str, args: list[str]) -> tuple[float, float, int, float, 
     
     return elapsed, cpu_time, tick_diff, temp_diff, energy
 
-def _build_tools(gcc: str, basedir: str, coder: str, decoder: str, generator: str) -> None:
-    """Build tools with provided GCC
+def _build_tools(gcc: str, gener: str, makefile_dir: str) -> None:
+    """
+    Build tools using Makefile in the specified directory.
 
     Args:
-        gcc (str): Avaliable GCC version. Example: gcc-14, gcc
-        coder (str): Coder .c file without extention. Example: tools/file2hamm
-        decoder (str): Decoder .c file without extention. Example: tools/hamm2file
-        generator (str): Generator .c file without extention. Example: tools/gen_file
+        makefile_dir (str): Path to the directory containing Makefile
     """
-    tools: list[str] = [coder, decoder, generator]
-    for tool in tools:
-        c_file = f"{tool}.c"
-        
-        if os.path.exists(tool):
-            print(f"[CLEANUP] remove old {tool}")
-            os.remove(tool)
-        
-        print(f"[BUILD] {c_file} -> {tool}")
-        c_files = glob.glob(f"{basedir}/src/*.c")
-        subprocess.run([gcc, f"-I{basedir}/include", "-O2", "-Wall", "-o", tool, *c_files, c_file], check=True)
+    makefile_path = Path(makefile_dir) / "Makefile"
+    if not makefile_path.exists():
+        raise FileNotFoundError(f"Makefile not found in {makefile_dir}")
+
+    print(f"[BUILD] Running 'make' in {makefile_dir}")
+    subprocess.run(["make"], cwd=makefile_dir, check=True)
+    subprocess.run([gcc, f"{gener}.c", "-o", gener], check=True)
+    print(f"[BUILD] Completed")
 
 def _print_statistics(
     size: int, diff: int, enctime: float, dectime: float, 
@@ -166,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument("--hamm-api", type=str, default="..", help="Path to hamming API")
     parser.add_argument("--coder", type=str, default="tools/file2hamm", help="Coder .c file")
     parser.add_argument("--decoder", type=str, default="tools/hamm2file", help="Decoder .c file")
+    parser.add_argument("--builder", type=str, help="Path to Makefile that builds coder and decoder")
     parser.add_argument("--file-gen", type=str, default="tools/gen_file", help="Generator .c file")
     parser.add_argument("--repeat", type=int, default=1, help="Repeat count")
     
@@ -174,8 +171,8 @@ if __name__ == "__main__":
     parser.add_argument("--parity-bits", type=str, default="2", help="Parity bits count, see --parity-help for info")
     parser.add_argument("--parity-help", action="store_true")
     parser.add_argument("--src-file", type=str, default="image.img", help="Source file (with data) path that will be generated")
-    parser.add_argument("--coded-file", type=str, default="image.hamm", help="Encoded source file name")
-    parser.add_argument("--decoded-file", type=str, default="decoded.img", help="Decoded encoded source file name")
+    parser.add_argument("--coded-file", type=str, default="image.enc", help="Encoded source file name")
+    parser.add_argument("--decoded-file", type=str, default="image.dec", help="Decoded encoded source file name")
     
     # === Bitflips emulation ===
     parser.add_argument("--strategy", type=str, default="none", help="random, scratch or wnoise")
@@ -193,7 +190,7 @@ if __name__ == "__main__":
         _print_parity_info()
         exit(1)
 
-    _build_tools(gcc=args.gcc, basedir=args.hamm_api, coder=args.coder, decoder=args.decoder, generator=args.file_gen)
+    _build_tools(gcc=args.gcc, gener=args.file_gen, makefile_dir=args.builder)
     
     diff = enctime = dectime = cpu_enc = cpu_dec = energy_enc = energy_dec = 0.0
     ticks_enc = ticks_dec = 0
@@ -216,6 +213,7 @@ if __name__ == "__main__":
         if args.strategy == "random":
             random_bitflips(file_path=args.coded_file, num_flips=args.flips_size)
         elif args.strategy == "wnoise":
+            print(f"WN strategy, flip_prob={args.flip_prob}")
             white_noise_bitflips(file_path=args.coded_file, flip_probability=args.flip_prob)
         elif args.strategy == "scratch":
             scratch_emulation(file_path=args.coded_file, scratch_length=args.scratch_length, width=args.width, intensity=args.intensity)

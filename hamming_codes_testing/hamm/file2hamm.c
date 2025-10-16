@@ -1,18 +1,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <hamm.h>
+#include <hamm/hamm.h>
 
 #define PARITY_BITS_ARG "--pb"
 #define TARGET_ARG      "--target"
 #define OUTPUT_ARG      "--out"
 
 static int _m = 4;
-static const char* _target   = "image.hamm";
-static const char* _out_path = "image.img";
+static const char* _target   = "image.img";
+static const char* _out_path = "image.hamm";
 
 /*
---pb - parity bits count (pb=0 => without decoding, just copy)
+--pb - parity bits count (pb=0 => without encoding, just copy)
 --target - Target file for encoding
 --out - Path to save location (will create new file)
 */
@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    fprintf(stdout, "[hamm2file] _target=%s, _out_path=%s, _m=%i\n", _target, _out_path, _m);
+    fprintf(stdout, "[file2hamm] _target=%s, _out_path=%s, _m=%i\n", _target, _out_path, _m);
     FILE* src_f = fopen(_target, "rb");
     if (!src_f) return EXIT_FAILURE;
 
@@ -42,23 +42,23 @@ int main(int argc, char* argv[]) {
 
     fread(buffer, 1, in_size, src_f);
     fclose(src_f);
-
+    
     FILE* fo = fopen(_out_path, "wb");
     if (!fo) return EXIT_FAILURE;
 
     if (!_m) fwrite(buffer, 1, in_size, fo);
     else {
         ll_init();
-        long dec_size = calculate_decoded_size(in_size, _m);
-        char* decoded = (char*)malloc(dec_size);
-        if (!decoded) {
+        long enc_size = calculate_encoded_size((int)in_size, _m);
+        char* encoded = (char*)malloc(enc_size);
+        if (!encoded) {
             free(buffer);
             return EXIT_FAILURE;
         }
 
-        decode_hamming_array((const byte_t*)buffer, in_size, (byte_t*)decoded, _m);
-        fwrite(decoded, 1, dec_size, fo);
-        free(decoded);
+        encode_hamming_array((const byte_t*)buffer, in_size, (byte_t*)encoded, _m);
+        fwrite(encoded, 1, enc_size, fo);
+        free(encoded);
     }
 
     fclose(fo);
