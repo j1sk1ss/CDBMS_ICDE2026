@@ -9,3 +9,4 @@
 - Hamming 511,502
 
 # BCH codes
+- BCH 15,7
